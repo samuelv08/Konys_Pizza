@@ -1,0 +1,15 @@
+# Configuración local con claves (NO subir a GitHub)
+js/config.js
+.env
+.env.*
+
+# Salida de build y dependencias
+dist/
+node_modules/
+
+# Vercel
+.vercel/
+
+# Sistema
+.DS_Store
+Thumbs.db

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Konys Pizza · Reserva tu mesa en Bucaramanga</title>
+  <meta name="description" content="Reserva tu mesa en Konys Pizza, la pizza más icónica de Bucaramanga. Elige fecha, hora y mesa sin llamar.">
+
+  <!-- Tipografías: Raleway (títulos) + Inter (texto) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Raleway:wght@700;800&display=swap" rel="stylesheet">
+  <!-- Íconos -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- Aviso si falta configurar Supabase (lo activa cliente.js) -->
+  <div id="aviso-config" class="aviso-config" hidden></div>
+
+  <!-- ===== Encabezado ===== -->
+  <header class="header">
+    <div class="container header-in">
+      <a href="#inicio" class="logo" aria-label="Konys Pizza, ir al inicio">
+        <i class="fa-solid fa-pizza-slice" aria-hidden="true"></i>
+        <span>Konys Pizza</span>
+      </a>
+
+      <button class="menu-btn" id="menu-btn" aria-label="Abrir menú" aria-expanded="false" aria-controls="nav">
+        <i class="fa-solid fa-bars" aria-hidden="true"></i>
+      </button>
+
+      <nav class="nav" id="nav" aria-label="Principal">
+        <a href="#inicio">Inicio</a>
+        <a href="#mesas">Mesas</a>
+        <a href="#carta">Carta</a>
+        <a href="#reservar">Reservar</a>
+        <a href="#contacto">Contacto</a>
+        <a href="admin.html" class="btn-admin">Admin</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- ===== Hero ===== -->
+    <section id="inicio" class="hero">
+      <div class="container hero-in">
+        <div class="hero-texto">
+          <h1>Konys Pizza</h1>
+          <p class="eslogan">La pizza más icónica de la ciudad</p>
+          <p class="hero-sub">Mira qué mesas están libres, elige tu horario y reserva en un minuto, sin llamar.</p>
+          <a href="#mesas" class="btn btn-lg">Reserva tu mesa</a>
+        </div>
+        <!-- Pizza dibujada con CSS: un solo elemento decorativo -->
+        <div class="pizza" aria-hidden="true"></div>
+      </div>
+    </section>
+
+    <!-- ===== Mesas ===== -->
+    <section id="mesas" class="seccion">
+      <div class="container">
+        <h2>Nuestras mesas</h2>
+        <p class="seccion-sub">El estado indica si todavía quedan horarios libres hoy. Toca una mesa para elegir otra fecha.</p>
+        <div id="mesas-grid" class="mesas-grid" aria-live="polite">
+          <p class="vacio">Cargando mesas…</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Cómo reservar ===== -->
+    <section id="reservar" class="seccion seccion-alt">
+      <div class="container">
+        <h2>Reservar es muy fácil</h2>
+        <ol class="pasos">
+          <li><strong>Elige tu mesa</strong><span>Terraza o salón, según cuántos sean.</span></li>
+          <li><strong>Escoge día y hora</strong><span>Los horarios ocupados aparecen en gris.</span></li>
+          <li><strong>Deja tu nombre</strong><span>Confirmas al instante, sin llamadas.</span></li>
+        </ol>
+        <a href="#mesas" class="btn">Ver mesas disponibles</a>
+      </div>
+    </section>
+
+    <!-- ===== Carta digital ===== -->
+    <section id="carta" class="seccion">
+      <div class="container">
+        <h2>Nuestra carta</h2>
+        <p class="seccion-sub">Precios en pesos colombianos (COP).</p>
+        <div id="carta-tabs" class="tabs" role="tablist" aria-label="Categorías de la carta"></div>
+        <div id="carta-lista" class="carta-lista" aria-live="polite">
+          <p class="vacio">Cargando carta…</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== Pie de página ===== -->
+  <footer id="contacto" class="footer">
+    <div class="container footer-in">
+      <div>
+        <h3>Konys Pizza</h3>
+        <p>La pizza más icónica de la ciudad.</p>
+      </div>
+      <div>
+        <h3>Encuéntranos</h3>
+        <p><i class="fa-solid fa-location-dot" aria-hidden="true"></i> Cra. 36 con calle 41, Bucaramanga</p>
+        <p><i class="fa-solid fa-phone" aria-hidden="true"></i> <span id="f-telefono">—</span></p>
+        <p>
+          <a id="f-whatsapp" href="#" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i> Escríbenos por WhatsApp</a>
+        </p>
+        <p>
+          <a href="https://www.instagram.com/konys_pizza" target="_blank" rel="noopener"><i class="fa-brands fa-instagram" aria-hidden="true"></i> @konys_pizza</a>
+        </p>
+      </div>
+      <div>
+        <h3>Horarios</h3>
+        <p>Almuerzo: 12:30 p. m. a 2:30 p. m.</p>
+        <p>Noche: 5:00 p. m. a 11:00 p. m.</p>
+      </div>
+    </div>
+    <p class="footer-copy">© <span id="f-anio"></span> Konys Pizza · Proyecto académico</p>
+  </footer>
+
+  <!-- ===== Modal de reserva (se llena desde cliente.js) ===== -->
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-titulo" id="modal-card">
+      <div id="modal-contenido"></div>
+    </div>
+  </div>
+
+  <!-- Scripts: SDK de Supabase por CDN -> config -> conexión -> lógica -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/cliente.js"></script>
+</body>
+</html>

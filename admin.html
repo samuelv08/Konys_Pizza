@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Administración · Konys Pizza</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Raleway:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="body-admin">
+
+  <!-- ===== Pantalla de acceso (RF-08) ===== -->
+  <div id="login" class="login-wrap">
+    <form id="login-form" class="login-card" novalidate>
+      <div class="logo logo-oscuro">
+        <i class="fa-solid fa-pizza-slice" aria-hidden="true"></i>
+        <span>Konys Pizza</span>
+      </div>
+      <h1>Panel de administración</h1>
+      <label for="clave">Contraseña
+        <input id="clave" type="password" autocomplete="current-password" required>
+      </label>
+      <p id="login-error" class="error" role="alert"></p>
+      <button type="submit" class="btn btn-full">Ingresar</button>
+      <a href="index.html" class="link-volver">Volver al sitio</a>
+    </form>
+  </div>
+
+  <!-- ===== Aplicación (visible tras iniciar sesión) ===== -->
+  <div id="app" class="admin" hidden>
+    <aside class="sidebar">
+      <div class="logo">
+        <i class="fa-solid fa-pizza-slice" aria-hidden="true"></i>
+        <span>Konys Pizza</span>
+      </div>
+      <nav class="nav-admin" aria-label="Secciones del panel">
+        <button data-vista="mesas"><i class="fa-solid fa-chair" aria-hidden="true"></i> Mesas</button>
+        <button data-vista="horarios"><i class="fa-regular fa-clock" aria-hidden="true"></i> Horarios</button>
+        <button data-vista="reservas"><i class="fa-regular fa-calendar-check" aria-hidden="true"></i> Reservas</button>
+        <button data-vista="carta"><i class="fa-solid fa-utensils" aria-hidden="true"></i> Carta</button>
+        <button id="btn-salir" class="salir"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Cerrar sesión</button>
+      </nav>
+    </aside>
+
+    <main class="admin-main">
+      <div id="vista"></div>
+    </main>
+  </div>
+
+  <!-- Modal para formularios de crear/editar -->
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <div id="modal-contenido"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>
