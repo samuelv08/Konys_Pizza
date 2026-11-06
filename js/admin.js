@@ -329,7 +329,12 @@ async function vistaReservas() {
   cacheMesas = (mesas || []).sort(porNombre);
 
   $('#vista').innerHTML = `
-    <div class="toolbar"><h2>Reservas</h2></div>
+    <div class="toolbar">
+      <h2>Reservas</h2>
+      <button class="btn btn-danger" id="btn-limpiar-reservas">
+        <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Eliminar canceladas y completadas
+      </button>
+    </div>
     <form id="filtros" class="filtros">
       <label>Fecha
         <input type="date" id="fl-fecha" value="${esc(filtrosReservas.fecha)}">
@@ -366,8 +371,50 @@ async function vistaReservas() {
     Object.assign(filtrosReservas, { fecha: '', mesa: '', estado: '', pagina: 0 });
     vistaReservas();
   });
+  $('#btn-limpiar-reservas').addEventListener('click', eliminarReservasCerradas);
 
   await recargarReservas();
+}
+
+/**
+ * Elimina TODAS las reservas con estado 'cancelada' o 'completada'
+ * (sin importar los filtros activos). Las confirmadas nunca se tocan.
+ * Primero cuenta cuántas son y pide confirmación.
+ */
+async function eliminarReservasCerradas() {
+  const btn = $('#btn-limpiar-reservas');
+  const estados = ['cancelada', 'completada'];
+
+  btn.disabled = true;
+  try {
+    // 1) Contar cuántas se van a borrar
+    const { count, error: errCount } = await db.from('reservas')
+      .select('id', { count: 'exact', head: true })
+      .in('estado', estados);
+    if (errCount) { toast(mensajeError(errCount), 'error'); return; }
+
+    if (!count) {
+      toast('No hay reservas canceladas ni completadas para eliminar.');
+      return;
+    }
+
+    // 2) Confirmar
+    const ok = confirm(
+      `Se eliminarán ${count} reserva${count === 1 ? '' : 's'} con estado cancelada o completada.\n\n` +
+      'Esta acción no se puede deshacer. Las reservas confirmadas no se tocarán.\n\n¿Continuar?'
+    );
+    if (!ok) return;
+
+    // 3) Eliminar
+    const { error } = await db.from('reservas').delete().in('estado', estados);
+    if (error) { toast(mensajeError(error), 'error'); return; }
+
+    toast(`Se eliminaron ${count} reserva${count === 1 ? '' : 's'}.`);
+    filtrosReservas.pagina = 0;
+    await recargarReservas();
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function recargarReservas() {
