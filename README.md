@@ -104,6 +104,10 @@ Para activar los niveles:
    SET security_level = EXCLUDED.security_level;
    ```
 
+   Si el panel muestra el selector de estado pero al guardar aparece un error RLS
+   (`42501`), ejecuta `docs/reservation-status-rls.sql` en SQL Editor. La política y el
+   permiso de columna deben permitir la actualización también para `administrador`.
+
 3. La aplicación cierra la sesión tras 10 minutos de inactividad. Configura también la
    caducidad de sesiones y las reglas de contraseña en Supabase **Authentication > Settings**.
 4. `vercel.json` establece cabeceras de seguridad, incluida una Content Security Policy.
