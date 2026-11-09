@@ -22,6 +22,9 @@
         <span>Konys Pizza</span>
       </div>
       <h1>Panel de administración</h1>
+      <label for="correo">Correo electrónico
+        <input id="correo" type="email" autocomplete="username" required>
+      </label>
       <label for="clave">Contraseña
         <input id="clave" type="password" autocomplete="current-password" required>
       </label>
@@ -38,10 +41,11 @@
         <i class="fa-solid fa-pizza-slice" aria-hidden="true"></i>
         <span>Konys Pizza</span>
       </div>
+      <p id="nivel-acceso" class="seccion-sub"></p>
       <nav class="nav-admin" aria-label="Secciones del panel">
         <button data-vista="mesas"><i class="fa-solid fa-chair" aria-hidden="true"></i> Mesas</button>
         <button data-vista="horarios"><i class="fa-regular fa-clock" aria-hidden="true"></i> Horarios</button>
-        <button data-vista="reservas"><i class="fa-regular fa-calendar-check" aria-hidden="true"></i> Reservas</button>
+        <button data-vista="reservas" data-permiso="operador"><i class="fa-regular fa-calendar-check" aria-hidden="true"></i> Reservas</button>
         <button data-vista="carta"><i class="fa-solid fa-utensils" aria-hidden="true"></i> Carta</button>
         <button id="btn-salir" class="salir"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Cerrar sesión</button>
       </nav>

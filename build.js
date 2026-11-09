@@ -4,20 +4,39 @@
  * Un sitio estático no puede leer variables de entorno en el navegador.
  * Este script, que corre en Vercel durante el despliegue:
  *   1. Copia el sitio a la carpeta dist/
- *   2. Genera dist/js/config.js con los valores de las variables de
- *      entorno (configuradas en Vercel > Settings > Environment Variables)
+ *   2. Genera dist/js/config.js con las variables de entorno si existen,
+ *      o con js/config.js para compilaciones locales.
  * Así las claves no quedan escritas en el repositorio de GitHub.
  * ===================================================================== */
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const DIST = 'dist';
-const requeridas = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'ADMIN_PASSWORD'];
-const faltan = requeridas.filter((k) => !process.env[k]);
+const requeridas = ['SUPABASE_URL', 'SUPABASE_ANON_KEY'];
+const configLocalPath = path.join('js', 'config.js');
+let configLocal = {};
 
+if (fs.existsSync(configLocalPath)) {
+  const contexto = { window: {} };
+  const fuente = fs.readFileSync(configLocalPath, 'utf8');
+  vm.runInNewContext(fuente, contexto, { timeout: 1000 });
+  configLocal = contexto.window.APP_CONFIG || {};
+}
+
+const cfg = Object.fromEntries(
+  [...requeridas, 'WHATSAPP', 'TELEFONO'].map((k) => [
+    k,
+    process.env[k] || configLocal[k],
+  ])
+);
+cfg.WHATSAPP = cfg.WHATSAPP || '573000000000';
+cfg.TELEFONO = cfg.TELEFONO || '300 000 0000';
+
+const faltan = requeridas.filter((k) => !cfg[k]);
 if (faltan.length) {
-  console.error('✖ Faltan variables de entorno: ' + faltan.join(', '));
-  console.error('  Configúralas en Vercel > Settings > Environment Variables.');
+  console.error('✖ Faltan valores requeridos: ' + faltan.join(', '));
+  console.error('  Configúralas en Vercel o completa js/config.js para desarrollo local.');
   process.exit(1);
 }
 
@@ -28,14 +47,7 @@ for (const item of ['index.html', 'admin.html', 'css', 'js']) {
   fs.cpSync(item, path.join(DIST, item), { recursive: true });
 }
 
-// 2. Generar config.js a partir del entorno (reemplaza cualquier copia local)
-const cfg = {
-  SUPABASE_URL: process.env.SUPABASE_URL,
-  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
-  ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
-  WHATSAPP: process.env.WHATSAPP || '573000000000',
-  TELEFONO: process.env.TELEFONO || '300 000 0000',
-};
+// 2. Generar config.js (las variables de entorno prevalecen sobre la copia local)
 fs.rmSync(path.join(DIST, 'js', 'config.js'), { force: true });
 fs.writeFileSync(
   path.join(DIST, 'js', 'config.js'),

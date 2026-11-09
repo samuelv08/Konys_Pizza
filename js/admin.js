@@ -2,58 +2,44 @@
  * admin.js — Lógica del módulo administrador (admin.html)
  * ---------------------------------------------------------------------
  * Secciones: Mesas, Horarios, Reservas, Carta.
- * Acceso: contraseña simple validada en el navegador (RF-08).
- *
- * ⚠ LIMITACIÓN DE SEGURIDAD: esta contraseña es visible para quien
- *   inspeccione el código, y el panel usa la misma anon key que los
- *   clientes. Es una protección básica, válida para el proyecto
- *   académico. En producción hay que usar Supabase Auth.
+ * Acceso: Supabase Auth y permisos verificados por RLS en la base de datos.
  * ===================================================================== */
 
-const SESSION_KEY = 'konys_admin_ok';
+const NIVELES_ACCESO = {
+  consulta: { rango: 1, nombre: 'Consulta' },
+  operador: { rango: 2, nombre: 'Operador' },
+  gestor: { rango: 3, nombre: 'Gestor' },
+  administrador: { rango: 4, nombre: 'Administrador' },
+};
 const ORDEN_DIAS = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
 const CATEGORIAS_ADMIN = { pizzas: 'Pizzas', entradas: 'Entradas', postres: 'Postres', bebidas: 'Bebidas' };
 const ZONAS_ADMIN = { terraza: 'Terraza', salon: 'Salón' };
 const ESTADOS_RESERVA = { confirmada: 'Confirmada', cancelada: 'Cancelada', completada: 'Completada' };
 const POR_PAGINA = 10;
+const INACTIVIDAD_MAX_MS = 10 * 60 * 1000;
 
 let cacheMesas = [];   // mesas cargadas (para filtros y formularios)
 let cachePlatos = [];  // platos cargados
 const filtrosReservas = { fecha: '', mesa: '', estado: '', pagina: 0 };
+let nivelAcceso = null;
+let temporizadorInactividad = null;
 
 const cargandoHTML = '<p class="vacio">Cargando…</p>';
 
 // ---------------------------------------------------------------------
 // Acceso (RF-08)
 // ---------------------------------------------------------------------
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   if (!CONFIG_OK) {
     $('#login-error').textContent = 'Falta configurar js/config.js con tus datos de Supabase.';
   }
 
-  $('#login-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const clave = $('#clave').value;
-    if (!CONFIG_OK) return;
-    if (!CFG.ADMIN_PASSWORD) {
-      $('#login-error').textContent = 'No hay contraseña configurada (ADMIN_PASSWORD).';
-      return;
-    }
-    if (clave !== CFG.ADMIN_PASSWORD) {
-      $('#login-error').textContent = 'Contraseña incorrecta.';
-      $('#clave').select();
-      return;
-    }
-    sessionStorage.setItem(SESSION_KEY, '1'); // la sesión dura mientras la pestaña esté abierta
-    entrar();
-  });
-
+  $('#login-form').addEventListener('submit', iniciarSesion);
   $('#btn-salir').addEventListener('click', salir);
 
   $$('.nav-admin [data-vista]').forEach((b) =>
     b.addEventListener('click', () => mostrarVista(b.dataset.vista)));
 
-  // Cierre del modal: clic fuera, botón con data-cerrar o tecla Esc
   const modal = $('#modal');
   modal.addEventListener('click', (e) => {
     if (e.target === modal || e.target.closest('[data-cerrar]')) cerrarModal();
@@ -62,26 +48,170 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Escape' && !modal.hidden) cerrarModal();
   });
 
-  if (CONFIG_OK && sessionStorage.getItem(SESSION_KEY) === '1') entrar();
+  if (CONFIG_OK) {
+    db.auth.onAuthStateChange((evento) => {
+      if (evento === 'SIGNED_OUT') cerrarSesionUI();
+    });
+    await restaurarSesion();
+  }
 });
 
-function entrar() {
+async function iniciarSesion(e) {
+  e.preventDefault();
+  if (!CONFIG_OK) return;
+
+  const boton = $('#login-form button[type="submit"]');
+  boton.disabled = true;
+  $('#login-error').textContent = '';
+  try {
+    const { data, error } = await db.auth.signInWithPassword({
+      email: $('#correo').value.trim(),
+      password: $('#clave').value,
+    });
+    if (error) {
+      $('#login-error').textContent = 'Correo o contraseña incorrectos.';
+      $('#clave').select();
+      return;
+    }
+    if (!data.user) {
+      $('#login-error').textContent = 'No se pudo identificar la cuenta autenticada.';
+      return;
+    }
+
+    const acceso = await consultarNivelAcceso(data.user.id);
+    if (acceso.error) {
+      await cerrarSesionNoAutorizada(`No se pudo verificar el nivel de acceso: ${mensajeError(acceso.error)}`);
+      return;
+    }
+    if (!acceso.nivel) {
+      await cerrarSesionNoAutorizada('Tu usuario no tiene un nivel asignado. Solicita acceso al administrador.');
+      return;
+    }
+    entrar(acceso.nivel);
+  } catch (error) {
+    $('#login-error').textContent = `No se pudo iniciar sesión: ${error.message || 'error inesperado'}`;
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+async function restaurarSesion() {
+  const { data, error } = await db.auth.getSession();
+  if (error) {
+    $('#login-error').textContent = `No se pudo comprobar la sesión: ${mensajeError(error)}`;
+    return;
+  }
+  if (!data.session) return;
+
+  const { data: usuario, error: errorUsuario } = await db.auth.getUser();
+  if (errorUsuario) {
+    $('#login-error').textContent = `No se pudo validar la sesión: ${mensajeError(errorUsuario)}`;
+    return;
+  }
+  if (!usuario.user) {
+    await cerrarSesionNoAutorizada('No se pudo identificar la cuenta de esta sesión.');
+    return;
+  }
+
+  const acceso = await consultarNivelAcceso(usuario.user.id);
+  if (acceso.error) {
+    await cerrarSesionNoAutorizada(`No se pudo verificar el nivel de acceso: ${mensajeError(acceso.error)}`);
+    return;
+  }
+  if (!acceso.nivel) {
+    await cerrarSesionNoAutorizada('Tu usuario no tiene un nivel asignado. Solicita acceso al administrador.');
+    return;
+  }
+  entrar(acceso.nivel);
+}
+
+async function cerrarSesionNoAutorizada(mensaje) {
+  const { error } = await db.auth.signOut();
+  $('#login-error').textContent = error
+    ? `${mensaje} No se pudo cerrar la sesión: ${mensajeError(error)}`
+    : mensaje;
+}
+
+async function consultarNivelAcceso(userId) {
+  const { data, error } = await db.from('admin_roles')
+    .select('security_level')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) return { nivel: null, error };
+  return {
+    nivel: NIVELES_ACCESO[data?.security_level] ? data.security_level : null,
+    error: null,
+  };
+}
+
+function entrar(nivel) {
+  nivelAcceso = nivel;
   $('#login').hidden = true;
   $('#app').hidden = false;
+  $('#nivel-acceso').textContent = `Nivel de acceso: ${NIVELES_ACCESO[nivel].nombre}`;
+  aplicarPermisosVista($('.nav-admin'));
+  iniciarTemporizadorInactividad();
   mostrarVista('mesas');
 }
 
-function salir() {
-  sessionStorage.removeItem(SESSION_KEY);
+async function salir() {
+  const { error } = await db.auth.signOut();
+  if (error) {
+    toast(`No se pudo cerrar la sesión: ${mensajeError(error)}`, 'error');
+    return;
+  }
+  cerrarSesionUI();
+}
+
+function cerrarSesionUI() {
+  clearTimeout(temporizadorInactividad);
+  temporizadorInactividad = null;
+  document.removeEventListener('pointerdown', reiniciarTemporizadorInactividad);
+  document.removeEventListener('keydown', reiniciarTemporizadorInactividad);
+  nivelAcceso = null;
   $('#app').hidden = true;
   $('#login').hidden = false;
+  $('#correo').value = '';
   $('#clave').value = '';
-  $('#login-error').textContent = '';
+  $('#nivel-acceso').textContent = '';
+  cerrarModal();
+}
+
+function iniciarTemporizadorInactividad() {
+  document.addEventListener('pointerdown', reiniciarTemporizadorInactividad);
+  document.addEventListener('keydown', reiniciarTemporizadorInactividad);
+  reiniciarTemporizadorInactividad();
+}
+
+function reiniciarTemporizadorInactividad() {
+  clearTimeout(temporizadorInactividad);
+  temporizadorInactividad = setTimeout(async () => {
+    const { error } = await db.auth.signOut();
+    if (error) {
+      toast(`No se pudo cerrar la sesión por inactividad: ${mensajeError(error)}`, 'error');
+      reiniciarTemporizadorInactividad();
+    } else {
+      $('#login-error').textContent = 'La sesión se cerró por inactividad.';
+    }
+  }, INACTIVIDAD_MAX_MS);
+}
+
+function tieneNivel(minimo) {
+  return Boolean(nivelAcceso && NIVELES_ACCESO[nivelAcceso].rango >= NIVELES_ACCESO[minimo].rango);
+}
+
+function aplicarPermisosVista(root = $('#vista')) {
+  $$('[data-permiso]', root).forEach((elemento) => {
+    elemento.hidden = !tieneNivel(elemento.dataset.permiso);
+  });
 }
 
 function mostrarVista(nombre) {
+  if (!tieneNivel('consulta')) return;
+  if (nombre === 'reservas' && !tieneNivel('operador')) return;
   $$('.nav-admin [data-vista]').forEach((b) => b.classList.toggle('activa', b.dataset.vista === nombre));
   const vistas = { mesas: vistaMesas, horarios: vistaHorarios, reservas: vistaReservas, carta: vistaCarta };
+  if (!vistas[nombre]) return;
   $('#vista').innerHTML = cargandoHTML;
   vistas[nombre]();
 }
@@ -119,9 +249,10 @@ async function vistaMesas() {
   $('#vista').innerHTML = `
     <div class="toolbar">
       <h2>Mesas</h2>
-      <button class="btn" id="btn-nueva-mesa">+ Nueva mesa</button>
+      <button class="btn" id="btn-nueva-mesa" data-permiso="gestor">+ Nueva mesa</button>
     </div>
     <div id="tabla-mesas" class="tabla-wrap">${cargandoHTML}</div>`;
+  aplicarPermisosVista();
   $('#btn-nueva-mesa').addEventListener('click', () => formMesa());
   await recargarMesas();
 }
@@ -147,7 +278,7 @@ async function recargarMesas() {
             <td data-label="Zona">${esc(ZONAS_ADMIN[m.zona] || m.zona)}</td>
             <td data-label="Capacidad">${m.capacidad} personas</td>
             <td data-label="Estado">
-              <label class="switch" title="Activar o desactivar">
+              <label class="switch" title="Activar o desactivar" data-permiso="gestor">
                 <input type="checkbox" data-toggle="${esc(m.id)}" ${m.activa ? 'checked' : ''}
                        aria-label="Mesa ${esc(m.nombre)} activa">
                 <span></span>
@@ -155,12 +286,13 @@ async function recargarMesas() {
               <small class="estado-txt">${m.activa ? 'Activa' : 'Inactiva'}</small>
             </td>
             <td data-label="Acciones" class="acciones">
-              <button class="btn btn-sm btn-outline" data-editar="${esc(m.id)}">Editar</button>
-              <button class="btn btn-sm btn-danger" data-borrar="${esc(m.id)}">Borrar</button>
+              <button class="btn btn-sm btn-outline" data-editar="${esc(m.id)}" data-permiso="gestor">Editar</button>
+              <button class="btn btn-sm btn-danger" data-borrar="${esc(m.id)}" data-permiso="administrador">Borrar</button>
             </td>
           </tr>`).join('')}
       </tbody>
     </table>`;
+  aplicarPermisosVista(cont);
 
   // Activar / desactivar (el cambio se refleja a los clientes)
   $$('[data-toggle]', cont).forEach((chk) => chk.addEventListener('change', async () => {
@@ -216,7 +348,7 @@ function formMesa(mesa = null) {
     e.preventDefault();
     const err = $('#m-error');
     const nombre = $('#m-nombre').value.trim();
-    const capacidad = parseInt($('#m-capacidad').value, 10);
+    const capacidad = Number($('#m-capacidad').value);
     const fotoTxt = $('#m-foto').value.trim();
 
     if (!nombre) { err.textContent = 'El nombre es obligatorio.'; return; }
@@ -268,18 +400,19 @@ async function vistaHorarios() {
             <tr data-id="${esc(h.id)}" data-jornada="${esc(h.jornada)}">
               <td data-label="Día"><strong>${esc(DIAS_TXT[h.dia_semana])}</strong></td>
               <td data-label="Jornada">${h.jornada === 'almuerzo' ? 'Almuerzo' : 'Noche'}</td>
-              <td data-label="Inicio"><input type="time" class="h-ini" value="${h.hora_inicio.slice(0, 5)}"></td>
-              <td data-label="Fin"><input type="time" class="h-fin" value="${h.hora_fin.slice(0, 5)}"></td>
-              <td data-label="Duración"><input type="number" class="h-dur" min="15" max="240" step="5" value="${h.duracion_slot}"></td>
+              <td data-label="Inicio"><input type="time" class="h-ini" value="${h.hora_inicio.slice(0, 5)}" ${tieneNivel('gestor') ? '' : 'disabled'}></td>
+              <td data-label="Fin"><input type="time" class="h-fin" value="${h.hora_fin.slice(0, 5)}" ${tieneNivel('gestor') ? '' : 'disabled'}></td>
+              <td data-label="Duración"><input type="number" class="h-dur" min="15" max="240" step="5" value="${h.duracion_slot}" ${tieneNivel('gestor') ? '' : 'disabled'}></td>
               <td data-label="Cupos" class="h-cupos">${contarCupos(h.hora_inicio, h.hora_fin, h.duracion_slot)}</td>
               <td data-label="Activo">
-                <label class="switch"><input type="checkbox" class="h-act" ${h.activo ? 'checked' : ''} aria-label="Activo"><span></span></label>
+                <label class="switch"><input type="checkbox" class="h-act" ${h.activo ? 'checked' : ''} aria-label="Activo" ${tieneNivel('gestor') ? '' : 'disabled'}><span></span></label>
               </td>
-              <td><button class="btn btn-sm h-guardar">Guardar</button></td>
+              <td><button class="btn btn-sm h-guardar" data-permiso="gestor">Guardar</button></td>
             </tr>`).join('')}
         </tbody>
       </table>
     </div>`;
+  aplicarPermisosVista($('#vista'));
 
   const tabla = $('#tabla-horarios');
 
@@ -297,11 +430,12 @@ async function vistaHorarios() {
     const tr = btn.closest('tr');
     const ini = $('.h-ini', tr).value;
     const fin = $('.h-fin', tr).value;
-    const dur = parseInt($('.h-dur', tr).value, 10);
+    const dur = Number($('.h-dur', tr).value);
 
     if (!ini || !fin) { toast('Completa la hora de inicio y de fin.', 'error'); return; }
     if (aMin(fin) <= aMin(ini)) { toast('La hora de fin debe ser mayor que la de inicio.', 'error'); return; }
     if (!Number.isInteger(dur) || dur < 15 || dur > 240) { toast('La duración debe estar entre 15 y 240 minutos.', 'error'); return; }
+    if (dur % 5 !== 0) { toast('La duración debe ser múltiplo de 5 minutos.', 'error'); return; }
     if (aMin(fin) - aMin(ini) < dur) { toast('La duración del cupo es mayor que la jornada.', 'error'); return; }
 
     btn.disabled = true;
@@ -331,7 +465,7 @@ async function vistaReservas() {
   $('#vista').innerHTML = `
     <div class="toolbar">
       <h2>Reservas</h2>
-      <button class="btn btn-danger" id="btn-limpiar-reservas">
+      <button class="btn btn-danger" id="btn-limpiar-reservas" data-permiso="administrador">
         <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Eliminar canceladas y completadas
       </button>
     </div>
@@ -358,6 +492,7 @@ async function vistaReservas() {
     </form>
     <div id="tabla-reservas" class="tabla-wrap">${cargandoHTML}</div>
     <div id="paginacion" class="paginacion"></div>`;
+  aplicarPermisosVista();
 
   $('#filtros').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -453,13 +588,14 @@ async function recargarReservas() {
             <td data-label="Hora">${formatHora12(r.hora_inicio)} a ${formatHora12(r.hora_fin)}</td>
             <td data-label="Personas">${r.num_personas}</td>
             <td data-label="Estado">
-              <select class="estado-sel ${esc(r.estado)}" data-id="${esc(r.id)}" aria-label="Estado de la reserva">
+              <select class="estado-sel ${esc(r.estado)}" data-id="${esc(r.id)}" aria-label="Estado de la reserva" ${tieneNivel('operador') ? '' : 'disabled'}>
                 ${opciones(ESTADOS_RESERVA, r.estado)}
               </select>
             </td>
           </tr>`).join('')}
       </tbody>
     </table>`;
+  aplicarPermisosVista(cont);
 
   // Cambiar el estado (p. ej. cancelar libera el cupo para otros clientes)
   $$('.estado-sel', cont).forEach((sel) => sel.addEventListener('change', async () => {
@@ -487,9 +623,10 @@ async function vistaCarta() {
   $('#vista').innerHTML = `
     <div class="toolbar">
       <h2>Carta</h2>
-      <button class="btn" id="btn-nuevo-plato">+ Nuevo plato</button>
+      <button class="btn" id="btn-nuevo-plato" data-permiso="gestor">+ Nuevo plato</button>
     </div>
     <div id="tabla-platos" class="tabla-wrap">${cargandoHTML}</div>`;
+  aplicarPermisosVista();
   $('#btn-nuevo-plato').addEventListener('click', () => formPlato());
   await recargarPlatos();
 }
@@ -522,13 +659,14 @@ async function recargarPlatos() {
             <td data-label="Precio">${formatCOP(p.precio)}</td>
             <td data-label="Visible"><span class="badge ${p.disponible ? 'libre' : 'cerrado'}">${p.disponible ? 'Visible' : 'Oculto'}</span></td>
             <td data-label="Acciones" class="acciones">
-              <button class="btn btn-sm btn-outline" data-editar="${esc(p.id)}">Editar</button>
-              <button class="btn btn-sm btn-outline" data-ocultar="${esc(p.id)}">${p.disponible ? 'Ocultar' : 'Mostrar'}</button>
-              <button class="btn btn-sm btn-danger" data-borrar="${esc(p.id)}">Eliminar</button>
+              <button class="btn btn-sm btn-outline" data-editar="${esc(p.id)}" data-permiso="gestor">Editar</button>
+              <button class="btn btn-sm btn-outline" data-ocultar="${esc(p.id)}" data-permiso="gestor">${p.disponible ? 'Ocultar' : 'Mostrar'}</button>
+              <button class="btn btn-sm btn-danger" data-borrar="${esc(p.id)}" data-permiso="administrador">Eliminar</button>
             </td>
           </tr>`).join('')}
       </tbody>
     </table>`;
+  aplicarPermisosVista(cont);
 
   $$('[data-editar]', cont).forEach((b) => b.addEventListener('click', () =>
     formPlato(cachePlatos.find((p) => p.id === b.dataset.editar))));
@@ -583,10 +721,14 @@ function formPlato(plato = null) {
     e.preventDefault();
     const err = $('#p-error');
     const nombre = $('#p-nombre').value.trim();
-    const precio = parseInt($('#p-precio').value, 10);
+    const precioTxt = $('#p-precio').value.trim();
+    const precio = Number(precioTxt);
 
     if (!nombre) { err.textContent = 'El nombre es obligatorio.'; return; }
-    if (!Number.isInteger(precio) || precio < 0) { err.textContent = 'Escribe un precio válido (número entero en COP).'; return; }
+    if (!precioTxt || !Number.isInteger(precio) || precio < 0 || precio % 500 !== 0) {
+      err.textContent = 'Escribe un precio válido en COP, en múltiplos de 500.';
+      return;
+    }
 
     const payload = {
       nombre,

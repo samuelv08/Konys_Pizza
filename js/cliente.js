@@ -306,15 +306,15 @@ function abrirReserva(mesaId) {
       <section id="paso-datos" hidden>
         <h4><span class="num">3</span> Tus datos</h4>
         <form id="form-reserva" novalidate>
-          <label for="f-nombre">Nombre
+          <label for="f-nombre">Nombre y apellido
             <input id="f-nombre" type="text" maxlength="80" autocomplete="name" required>
           </label>
           <label for="f-personas">Número de personas
             <input id="f-personas" type="number" min="1" max="${mesa.capacidad}" inputmode="numeric" value="2" required>
             <small>Esta mesa admite máximo ${mesa.capacidad}.</small>
           </label>
-          <label for="f-contacto">Teléfono o correo (opcional)
-            <input id="f-contacto" type="text" maxlength="60" autocomplete="tel">
+          <label for="f-contacto">Teléfono (opcional)
+            <input id="f-contacto" type="tel" inputmode="numeric" maxlength="60" autocomplete="tel">
           </label>
 
           <div id="resumen" class="resumen" aria-live="polite"></div>
@@ -325,6 +325,15 @@ function abrirReserva(mesaId) {
     </div>`;
 
   renderDias();
+  $('#f-nombre').addEventListener('input', (e) => {
+    e.target.value = e.target.value
+      .replace(/[^\p{L}\p{M}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/^\s+/u, '');
+  });
+  $('#f-contacto').addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/\D/g, '');
+  });
   $('#form-reserva').addEventListener('submit', confirmarReserva);
   $('#form-reserva').addEventListener('input', actualizarResumen);
   abrirModal();
@@ -464,10 +473,13 @@ function validarReserva({ nombre, personas, contacto }) {
   if (!diaTieneServicio(state.fecha)) return 'Ese día no tenemos servicio. Elige otra fecha.';
   if (!state.slotSel) return 'Elige un horario libre.';
   if (slotEsPasado(state.fecha, state.slotSel)) return 'Ese horario ya pasó. Elige otro.';
-  if (nombre.length < 2) return 'Escribe tu nombre (mínimo 2 letras).';
+  if (!/^[\p{L}\p{M}]+(?: [\p{L}\p{M}]+)+$/u.test(nombre)) {
+    return 'Escribe tu nombre y apellido usando solo letras.';
+  }
   if (!Number.isInteger(personas) || personas < 1) return 'Indica cuántas personas vendrán.';
   if (personas > mesa.capacidad) return `Esta mesa admite máximo ${mesa.capacidad} personas. Elige otra mesa o reduce el número.`;
-  if (contacto.length > 60) return 'El dato de contacto es demasiado largo.';
+  if (contacto && !/^\d+$/.test(contacto)) return 'El teléfono solo debe contener números.';
+  if (contacto.length > 60) return 'El teléfono es demasiado largo.';
   return null;
 }
 
@@ -479,7 +491,7 @@ async function confirmarReserva(e) {
 
   const datos = {
     nombre: $('#f-nombre').value.trim(),
-    personas: parseInt($('#f-personas').value, 10),
+    personas: Number($('#f-personas').value),
     contacto: $('#f-contacto').value.trim(),
   };
 
